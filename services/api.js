@@ -72,7 +72,7 @@ const closeSession = () => {
     resetApiToken()
     resetCsrfToken()
 
-    Notify.info("La sesión a sido cerrada.")
+    Notify.info("La sesión ha sido cerrada.")
 
     location.replace('/')
 }
@@ -162,9 +162,22 @@ const api = {
 
             let { response } = error
 
+            // Error de red u otro fallo sin respuesta HTTP
+            if(!response) {
+                if(options.hasOwnProperty('onError')) {
+                    options.onError(error);
+                }
+
+                if(options.hasOwnProperty('onFinish')) {
+                    options.onFinish(null);
+                }
+
+                return
+            }
+
             // Código de sesión invalida
             if(response.status === 401 && response.data?.message == 'Unauthenticated.') {
-                Notify.error("La sesión a expirado");
+                Notify.error("La sesión ha expirado");
 
                 closeSession();
 
@@ -173,7 +186,9 @@ const api = {
 
             // Fallas
             if(failCodes.includes(response.status)) {
-                options.hasOwnProperty('onFail')
+                if(options.hasOwnProperty('onFail')) {
+                    options.onFail(response.data);
+                }
 
                 if(response.data?.errors != null) {
                     this.errors = response.data.errors;
@@ -182,12 +197,20 @@ const api = {
                         Notify.error(this.errors[e])
                     }
                 }
-                
+
+                if(options.hasOwnProperty('onFinish')) {
+                    options.onFinish(response.data);
+                }
+
                 return
             }
             
             if(options.hasOwnProperty('onError')) {
                 options.onError(response.data);
+            }
+
+            if(options.hasOwnProperty('onFinish')) {
+                options.onFinish(response.data);
             }
 
             if(response.data != null) {
@@ -217,7 +240,7 @@ const api = {
         })
     },
     patch(url, options) {
-        this.load('patch', {
+        this.load({
             method: 'patch',
             url,
             options
@@ -279,6 +302,11 @@ const useForm = (form = {}) =>  {
     // Procesar elementos del formulario
     const append = (formData, key, value) => {
         if(Array.isArray(value)) {
+            // Lista vacía: transmitir la clave para poder sincronizar a cero
+            if(value.length === 0) {
+                return formData.append(composeKey(key, ''), '')
+            }
+
             return Array.from(value.keys()).forEach((index) => append(formData, composeKey(key, index), value[index]));
         } else if(value instanceof Date) {
             return formData.append(key, value.toISOString())
@@ -314,6 +342,7 @@ const useForm = (form = {}) =>  {
 
     // Transforma todos los datos
     const prepareData = (data) => {
+        filesCounter = 0;
         let formData = new FormData();
 
         for (let i in data) {
@@ -377,14 +406,16 @@ const useForm = (form = {}) =>  {
                     options.onStart(options);
                 }
 
+                const rawData = transform(this.data());
+                const formData = prepareData(rawData);
+                const hasFiles = filesCounter > 0;
+
                 let { data } = await axios({
                     method: method,
                     url,
-                    data: prepareData(transform(this.data())),
+                    data: hasFiles ? formData : rawData,
                     headers: {
-                        'Content-Type': (filesCounter > 0)
-                            ? 'multipart/form-data  boundary='
-                            : 'application/json',
+                        ...(hasFiles ? {} : { 'Content-Type': 'application/json' }),
                         'Accept': 'application/json',
                         'Authorization': `Bearer ${apiToken}`,
                         'X-CSRF-TOKEN': csrfToken.value
@@ -412,16 +443,23 @@ const useForm = (form = {}) =>  {
                 this.hasErrors = true;
 
                 let { response } = error
-                
-                if(options.hasOwnProperty('onError')) {
-                    options.onError(response);
-                }
 
-                if(response.data?.errors != null) {
-                    this.errors = response.data.errors;
+                // Error de red u otro fallo sin respuesta HTTP
+                if(!response) {
+                    if(options.hasOwnProperty('onError')) {
+                        options.onError(error);
+                    }
+                } else {
+                    if(options.hasOwnProperty('onError')) {
+                        options.onError(response);
+                    }
 
-                    for(let e in this.errors) {
-                        Notify.error(this.errors[e])
+                    if(response.data?.errors != null) {
+                        this.errors = response.data.errors;
+
+                        for(let e in this.errors) {
+                            Notify.error(this.errors[e])
+                        }
                     }
                 }
             }
@@ -457,7 +495,7 @@ const useForm = (form = {}) =>  {
             })
         },
         patch(url, options) {
-            this.load('patch', {
+            this.load({
                 method: 'patch',
                 url,
                 options
@@ -546,21 +584,28 @@ const useSearcher = (options = {
 
             let { response } = error
 
-            // Código de sesión invalida
-            if(response.status === 401 && response.data.message == 'Unauthenticated.') {
-                Notify.error("La sesión a expirado");
-                closeSession();
-                return
-            }
-            
-            if(options.hasOwnProperty('onError')) {
-                options.onError(response);
-            }
+            // Error de red u otro fallo sin respuesta HTTP
+            if(!response) {
+                if(options.hasOwnProperty('onError')) {
+                    options.onError(error);
+                }
+            } else {
+                // Código de sesión invalida
+                if(response.status === 401 && response.data?.message == 'Unauthenticated.') {
+                    Notify.error("La sesión ha expirado");
+                    closeSession();
+                    return
+                }
+                
+                if(options.hasOwnProperty('onError')) {
+                    options.onError(response);
+                }
 
-            if(response.data?.errors != null) {
-                this.errors = response.data.errors;
-                for(let e in this.errors) {
-                    Notify.error(this.errors[e])
+                if(response.data?.errors != null) {
+                    this.errors = response.data.errors;
+                    for(let e in this.errors) {
+                        Notify.error(this.errors[e])
+                    }
                 }
             }
         }

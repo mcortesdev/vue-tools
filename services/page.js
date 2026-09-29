@@ -63,8 +63,8 @@ const defineUser = (user) => {
         lastname: `${user.paternal} ${user?.maternal ?? ''}`,
         email: user.email,
         phone: user.phone,
-        profile_photo_url: user.profile_photo_url,
-        profile_photo_path: user.profile_photo_path,
+        has_profile_photo: user.has_profile_photo,
+        profile_photo_url: user.profile_photo_url
     });
 }
 
